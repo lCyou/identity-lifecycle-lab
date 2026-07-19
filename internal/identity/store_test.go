@@ -1,15 +1,27 @@
-package identity
+package identity_test
 
-import "testing"
+import (
+	"errors"
+	"testing"
+
+	"github.com/lCyou/identity-lifecycle-lab/internal/identity"
+)
 
 func TestStoreTransitionLifecycle(t *testing.T) {
-	s := NewStore()
+	s := identity.NewStore()
 	e := s.CreateEntity("alice")
-	if e.State != StateEnrolled {
+	if e.State != identity.StateEnrolled {
 		t.Fatalf("want enrolled, got %s", e.State)
 	}
 
-	steps := []State{StateIssued, StateActive, StateSuspended, StateActive, StateRevoked, StateArchived}
+	steps := []identity.State{
+		identity.StateIssued,
+		identity.StateActive,
+		identity.StateSuspended,
+		identity.StateActive,
+		identity.StateRevoked,
+		identity.StateArchived,
+	}
 	for _, to := range steps {
 		updated, err := s.Transition(e.ID, to, "admin", "test")
 		if err != nil {
@@ -20,24 +32,24 @@ func TestStoreTransitionLifecycle(t *testing.T) {
 		}
 	}
 
-	if _, err := s.Transition(e.ID, StateActive, "admin", "attempt reactivation from archived"); err == nil {
+	if _, err := s.Transition(e.ID, identity.StateActive, "admin", "attempt reactivation from archived"); err == nil {
 		t.Fatal("expected error transitioning from archived, got nil")
 	}
 }
 
 func TestStoreRejectsSkippedTransition(t *testing.T) {
-	s := NewStore()
+	s := identity.NewStore()
 	e := s.CreateEntity("bob")
 
-	if _, err := s.Transition(e.ID, StateRevoked, "admin", "skip ahead"); err == nil {
+	if _, err := s.Transition(e.ID, identity.StateRevoked, "admin", "skip ahead"); err == nil {
 		t.Fatal("expected error for enrolled -> revoked, got nil")
 	}
 }
 
 func TestHistoryRecordsActorAndReason(t *testing.T) {
-	s := NewStore()
+	s := identity.NewStore()
 	e := s.CreateEntity("carol")
-	if _, err := s.Transition(e.ID, StateIssued, "registrar", "credentials issued"); err != nil {
+	if _, err := s.Transition(e.ID, identity.StateIssued, "registrar", "credentials issued"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -55,11 +67,11 @@ func TestHistoryRecordsActorAndReason(t *testing.T) {
 }
 
 func TestGetAndHistoryNotFound(t *testing.T) {
-	s := NewStore()
-	if _, err := s.GetEntity("missing"); err != ErrEntityNotFound {
+	s := identity.NewStore()
+	if _, err := s.GetEntity("missing"); !errors.Is(err, identity.ErrEntityNotFound) {
 		t.Fatalf("want ErrEntityNotFound, got %v", err)
 	}
-	if _, err := s.History("missing"); err != ErrEntityNotFound {
+	if _, err := s.History("missing"); !errors.Is(err, identity.ErrEntityNotFound) {
 		t.Fatalf("want ErrEntityNotFound, got %v", err)
 	}
 }
