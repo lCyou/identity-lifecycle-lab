@@ -49,12 +49,17 @@ docker/
     init.sql          # スキーマ + 監査ログ用トリガー
 docker-compose.yml     # ローカルPostgreSQL
 test/
+  identity/
+    state_test.go      # CanTransitionのテスト（DB不要）
+    store_test.go       # Storeのテスト（要PostgreSQL）
+  api/
+    handlers_test.go    # HTTPハンドラのテスト（要PostgreSQL）
   e2e/
     lifecycle_test.go  # 実HTTPサーバー越しの全ライフサイクル結合テスト
 main.go                # HTTPサーバー起動 + グレースフルシャットダウン
 ```
 
-単体テストは Go の言語仕様上、対象パッケージと同じディレクトリにしか置けませんが、`internal/identity` `internal/api` 配下のテストはいずれも外部テストパッケージ（`identity_test` / `api_test`）にしており、公開APIのみに依存する形で実装コードとは明確に切り離しています。HTTP全体を通した結合テストは `test/e2e` に独立して置いています。
+`internal/`配下には実装コードのみを置き、テストはすべて`test/`配下（`test/identity` `test/api` `test/e2e`）にまとめている。これができるのは、いずれのテストも`identity_test` / `api_test`という外部テストパッケージにしており、対象パッケージの非公開要素を一切使わず公開APIのみを呼び出しているため。Goの単体テストは「対象パッケージと同じディレクトリでなければならない」という制約があるのは非公開要素にアクセスする場合のみで、公開APIしか使わない外部テストパッケージであれば`internal`の外（同一モジュール内）のどのディレクトリに置いても`go test ./...`が正しく検出・実行する。
 
 ## 動かし方
 
