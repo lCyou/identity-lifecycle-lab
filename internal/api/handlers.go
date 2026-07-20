@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/lCyou/identity-lifecycle-lab/internal/identity"
@@ -32,6 +33,11 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+func writeInternalError(w http.ResponseWriter, err error) {
+	log.Printf("internal error: %v", err)
+	writeError(w, http.StatusInternalServerError, "internal error")
+}
+
 func (h *handler) createEntity(w http.ResponseWriter, r *http.Request) {
 	var req createEntityRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -43,18 +49,31 @@ func (h *handler) createEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	e := h.store.CreateEntity(req.Name)
+	e, err := h.store.CreateEntity(r.Context(), req.Name)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusCreated, e)
 }
 
 func (h *handler) listEntities(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.store.ListEntities())
+	list, err := h.store.ListEntities(r.Context())
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 func (h *handler) getEntity(w http.ResponseWriter, r *http.Request) {
-	e, err := h.store.GetEntity(r.PathValue("id"))
+	e, err := h.store.GetEntity(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		if errors.Is(err, identity.ErrEntityNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, e)
@@ -73,7 +92,7 @@ func (h *handler) createTransition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	e, err := h.store.Transition(id, identity.State(req.To), req.Actor, req.Reason)
+	e, err := h.store.Transition(r.Context(), id, identity.State(req.To), req.Actor, req.Reason)
 	if err != nil {
 		switch {
 		case errors.Is(err, identity.ErrEntityNotFound):
@@ -81,7 +100,7 @@ func (h *handler) createTransition(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, identity.ErrInvalidTransition):
 			writeError(w, http.StatusConflict, err.Error())
 		default:
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeInternalError(w, err)
 		}
 		return
 	}
@@ -89,9 +108,13 @@ func (h *handler) createTransition(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) listTransitions(w http.ResponseWriter, r *http.Request) {
-	hist, err := h.store.History(r.PathValue("id"))
+	hist, err := h.store.History(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		if errors.Is(err, identity.ErrEntityNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, hist)

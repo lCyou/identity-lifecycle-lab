@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lCyou/identity-lifecycle-lab/internal/api"
+	"github.com/lCyou/identity-lifecycle-lab/internal/dbtest"
 	"github.com/lCyou/identity-lifecycle-lab/internal/identity"
 )
 
@@ -30,7 +31,7 @@ func doJSON(t *testing.T, router http.Handler, method, path string, body any) *h
 }
 
 func TestEntityLifecycleViaAPI(t *testing.T) {
-	router := api.NewRouter(identity.NewStore())
+	router := api.NewRouter(identity.NewStore(dbtest.Open(t)))
 
 	createRec := doJSON(t, router, http.MethodPost, "/entities", map[string]string{"name": "alice"})
 	if createRec.Code != http.StatusCreated {
@@ -71,7 +72,7 @@ func TestEntityLifecycleViaAPI(t *testing.T) {
 }
 
 func TestGetUnknownEntityReturns404(t *testing.T) {
-	router := api.NewRouter(identity.NewStore())
+	router := api.NewRouter(identity.NewStore(dbtest.Open(t)))
 
 	rec := doJSON(t, router, http.MethodGet, "/entities/does-not-exist", nil)
 	if rec.Code != http.StatusNotFound {
@@ -80,7 +81,7 @@ func TestGetUnknownEntityReturns404(t *testing.T) {
 }
 
 func TestCreateEntityRequiresName(t *testing.T) {
-	router := api.NewRouter(identity.NewStore())
+	router := api.NewRouter(identity.NewStore(dbtest.Open(t)))
 
 	rec := doJSON(t, router, http.MethodPost, "/entities", map[string]string{"name": ""})
 	if rec.Code != http.StatusBadRequest {

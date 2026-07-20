@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/lCyou/identity-lifecycle-lab/internal/api"
+	"github.com/lCyou/identity-lifecycle-lab/internal/dbtest"
 	"github.com/lCyou/identity-lifecycle-lab/internal/identity"
 )
 
@@ -41,7 +42,7 @@ func decode[T any](t *testing.T, resp *http.Response) T {
 // 実際のHTTPサーバー越しに実行し、途中の不正遷移が拒否されることと
 // 監査ログが最終的に一貫していることを確認する。
 func TestFullLifecycleOverHTTP(t *testing.T) {
-	server := httptest.NewServer(api.NewRouter(identity.NewStore()))
+	server := httptest.NewServer(api.NewRouter(identity.NewStore(dbtest.Open(t))))
 	defer server.Close()
 
 	created := decode[identity.Entity](t, postJSON(t, server.URL+"/entities", map[string]string{"name": "alice"}))

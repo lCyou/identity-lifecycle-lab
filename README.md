@@ -19,6 +19,16 @@ ISO/IEC 24760-1（Identity management のフレームワーク規格）が定義
 enrolled → issued → active ⇄ suspended → revoked → archived
 ```
 
+## アーキテクチャ
+
+- **永続化はPostgreSQL**。`entities`（現在状態）と`transitions`（監査ログ）の2テーブル構成
+- **遷移が許可されているかどうかの判定はGoアプリ側**（`internal/identity/state.go`）で行う
+- **監査ログへの記録はアプリからは一切書き込まず、DBのトリガーに完全に委ねる**。`entities`へのINSERT/UPDATEに張られたトリガーが自動で`transitions`に行を追加する。アプリは同一トランザクション内で`set_config('app.actor', ...)` / `set_config('app.reason', ...)`により「誰が・なぜ」をトリガーへ引き渡すだけ。これにより、たとえ将来psqlから直接UPDATEされても監査ログが残る
+- **同時遷移の競合防止**: 遷移時は対象行を`SELECT ... FOR UPDATE`でロックしてから現在状態を確認する
+- **グレースフルシャットダウン**: `SIGINT`/`SIGTERM`を受けると新規リクエストの受付を止め、`http.Server.Shutdown`で処理中のリクエストを最大10秒待ってから終了し、その後にDB接続を閉じる
+
+トリガーの定義は [docker/postgres/init.sql](docker/postgres/init.sql) を参照。
+
 ## 構成
 
 ```
@@ -27,24 +37,44 @@ internal/
     entity.go       # Entity モデル
     transition.go   # TransitionRecord（監査ログ）モデル
     state.go        # State と許可遷移ルール
-    store.go        # インメモリストア（エンティティ + 監査ログ）
+    store.go        # PostgreSQLへの読み書き（*sql.DB経由）
     id.go
   api/
     router.go       # ルーティング定義
     handlers.go      # HTTPハンドラ
+  dbtest/
+    dbtest.go        # テスト用DB接続ヘルパー（TEST_DATABASE_URL）
+docker/
+  postgres/
+    init.sql          # スキーマ + 監査ログ用トリガー
+docker-compose.yml     # ローカルPostgreSQL
 test/
   e2e/
     lifecycle_test.go  # 実HTTPサーバー越しの全ライフサイクル結合テスト
-main.go              # HTTPサーバー起動（:8080）
+main.go                # HTTPサーバー起動 + グレースフルシャットダウン
 ```
 
 単体テストは Go の言語仕様上、対象パッケージと同じディレクトリにしか置けませんが、`internal/identity` `internal/api` 配下のテストはいずれも外部テストパッケージ（`identity_test` / `api_test`）にしており、公開APIのみに依存する形で実装コードとは明確に切り離しています。HTTP全体を通した結合テストは `test/e2e` に独立して置いています。
 
 ## 動かし方
 
+### 1. PostgreSQLを起動する
+
+```bash
+docker compose up -d
+```
+
+初回起動時に [docker/postgres/init.sql](docker/postgres/init.sql) が自動適用され、テーブルとトリガーが作成される。
+
+### 2. サーバーを起動する
+
 ```bash
 go run .
 ```
+
+デフォルトでは `postgres://identity:identity@localhost:5432/identity_lifecycle?sslmode=disable` に接続する（`docker-compose.yml`の設定と一致）。接続先を変えたい場合は`DATABASE_URL`環境変数で上書きできる。
+
+終了するときは `Ctrl+C`（`SIGINT`）または `SIGTERM` を送るとグレースフルシャットダウンする。
 
 ### エンティティを作成する
 
@@ -80,18 +110,24 @@ curl -s localhost:8080/entities/<id>/transitions | jq
 
 ## テスト
 
+状態遷移の合法性ルール(`internal/identity`の`CanTransition`)のテストはDB不要でそのまま動く。
+
 ```bash
 go test ./...
 ```
 
+それ以外（Store・API・e2e）はPostgreSQLへの接続が必要で、`TEST_DATABASE_URL`が未設定の場合は自動的にskipされる。
+
+```bash
+docker compose up -d
+TEST_DATABASE_URL="postgres://identity:identity@localhost:5432/identity_lifecycle?sslmode=disable" go test ./...
+```
+
 ## 現状のスコープと今後の拡張ポイント
 
-このリポジトリは「許可された状態遷移だけを通し、遷移のたびに誰が・いつ・なぜを記録する」という状態機械の中核部分のみを実装した学習用の第一歩です。実運用のIdentity管理基盤として使うには、少なくとも以下が不足しています。
+このリポジトリは「許可された状態遷移だけを通し、DBの仕組みで監査ログを記録し、永続化とグレースフルシャットダウンを備える」ところまでを実装した学習用の第二歩です。実運用のIdentity管理基盤として使うには、少なくとも以下が不足しています。
 
-- **永続化**: 現在はプロセスメモリ上のみで、再起動すると監査ログごと消える。SQLite等でエンティティ・遷移履歴を永続化する必要がある
 - **認可（誰が遷移を起こせるか）**: `actor` はリクエストボディの自己申告文字列で、なりすまし放題になっている。認証済みのユーザー/システムIDに紐付ける必要がある
 - **外部トリガーとの連携**: 実際の失効・一時停止は多くの場合、他システムからのWebhookや有効期限バッチなど、イベント駆動で起きる。現状はAPI呼び出しに頼っている
-- **並行制御**: 同一エンティティへの同時遷移リクエストに対する楽観ロック等は未実装
 - **入力検証・レート制限・認証**: APIとして最低限必要なガードレールは未実装
-
-学習ステップとしては、まず永続化を入れて監査ログの価値（後から「いつ・誰が・なぜ」を追える）を実感し、その後に認可・イベント駆動の仕組みを足していくのがおすすめです。
+- **マイグレーション管理**: 現在はdocker初回起動時に`init.sql`を流すだけで、スキーマ変更を追跡する仕組み（golang-migrate等）がない
