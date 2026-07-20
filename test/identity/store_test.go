@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lCyou/identity-lifecycle-lab/internal/dbtest"
 	"github.com/lCyou/identity-lifecycle-lab/internal/identity"
+	"github.com/lCyou/identity-lifecycle-lab/test/dbtest"
 )
 
 func TestStoreTransitionLifecycle(t *testing.T) {

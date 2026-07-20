@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/lCyou/identity-lifecycle-lab/internal/api"
-	"github.com/lCyou/identity-lifecycle-lab/internal/dbtest"
 	"github.com/lCyou/identity-lifecycle-lab/internal/identity"
+	"github.com/lCyou/identity-lifecycle-lab/test/dbtest"
 )
 
 func doJSON(t *testing.T, router http.Handler, method, path string, body any) *httptest.ResponseRecorder {

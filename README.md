@@ -42,13 +42,13 @@ internal/
   api/
     router.go       # ルーティング定義
     handlers.go      # HTTPハンドラ
-  dbtest/
-    dbtest.go        # テスト用DB接続ヘルパー（TEST_DATABASE_URL）
 docker/
   postgres/
     init.sql          # スキーマ + 監査ログ用トリガー
 docker-compose.yml     # ローカルPostgreSQL
 test/
+  dbtest/
+    dbtest.go          # テスト用DB接続ヘルパー（TEST_DATABASE_URL）
   identity/
     state_test.go      # CanTransitionのテスト（DB不要）
     store_test.go       # Storeのテスト（要PostgreSQL）
@@ -59,7 +59,7 @@ test/
 main.go                # HTTPサーバー起動 + グレースフルシャットダウン
 ```
 
-`internal/`配下には実装コードのみを置き、テストはすべて`test/`配下（`test/identity` `test/api` `test/e2e`）にまとめている。これができるのは、いずれのテストも`identity_test` / `api_test`という外部テストパッケージにしており、対象パッケージの非公開要素を一切使わず公開APIのみを呼び出しているため。Goの単体テストは「対象パッケージと同じディレクトリでなければならない」という制約があるのは非公開要素にアクセスする場合のみで、公開APIしか使わない外部テストパッケージであれば`internal`の外（同一モジュール内）のどのディレクトリに置いても`go test ./...`が正しく検出・実行する。
+`internal/`配下には実装コードのみを置き、テストとテスト支援コード（`dbtest`含む）はすべて`test/`配下（`test/dbtest` `test/identity` `test/api` `test/e2e`）にまとめている。これができるのは、いずれのテストも`identity_test` / `api_test`という外部テストパッケージにしており、対象パッケージの非公開要素を一切使わず公開APIのみを呼び出しているため。Goの単体テストは「対象パッケージと同じディレクトリでなければならない」という制約があるのは非公開要素にアクセスする場合のみで、公開APIしか使わない外部テストパッケージであれば`internal`の外（同一モジュール内）のどのディレクトリに置いても`go test ./...`が正しく検出・実行する。
 
 ## 動かし方
 

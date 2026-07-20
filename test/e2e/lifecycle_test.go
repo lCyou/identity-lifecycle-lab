@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/lCyou/identity-lifecycle-lab/internal/api"
-	"github.com/lCyou/identity-lifecycle-lab/internal/dbtest"
 	"github.com/lCyou/identity-lifecycle-lab/internal/identity"
+	"github.com/lCyou/identity-lifecycle-lab/test/dbtest"
 )
 
 func postJSON(t *testing.T, url string, body any) *http.Response {
